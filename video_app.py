@@ -5,7 +5,8 @@ import time
 import tkinter as tk
 from enum import Enum, unique
 import numpy as np
-
+import shapely
+from shapely.geometry import LineString, Point
 
 root = tk.Tk() 
 root.geometry("1000x600")
@@ -53,30 +54,97 @@ class Shape(Enum):
     PENTAGON = 5
     HEXAGON = 6
     
-def printShape(img, approx, position, area, w, h, square_rect_param) :
+def printShape(img, approx, square_rect_param, intersections) :
+    x, y, w, h = cv2.boundingRect(approx)
+    position = (x, y)
     diff_geometrics = abs(w-h)
     
     if len(approx) == Shape.TRIANGLE.value:
-        cv2.putText(img, 'Trojuholnik', position,
+        if(compare_shape_coordinates(approx, intersections, 20, 3)):
+            cv2.putText(img, 'Trojuholnik', position,
                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
   
     elif len(approx) == Shape.SQUARE.value:
-        txt = 'Obdlznik'
-        if diff_geometrics < square_rect_param:
-            txt = 'Stvorec'
-        cv2.putText(img, txt, position,
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        if(compare_shape_coordinates(approx, intersections, 20, 4)):
+            txt = 'Obdlznik'
+            if diff_geometrics < square_rect_param:
+                txt = 'Stvorec'
+            cv2.putText(img, txt, position,
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
   
-    # elif len(approx) == Shape.PENTAGON:
-    #     cv2.putText(img, 'Pentagon', position,
-    #             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-  
-    # elif len(approx) == Shape.HEXAGON.value:
-    #     cv2.putText(img, 'Hexagon', position,
-    #             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
-def getContorous(img, imgContour):
-    contours, hierarchy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+def getLinesFromAcc(accumulator):
+    result = []
+    for line in accumulator:
+        rho = line[0][0]
+        theta = line[0][1]
+        a = np.cos(theta)
+        b = np.sin(theta)
+        x0 = a*rho
+        y0 = b*rho
+        x1 = int(x0 + 1000*(-b))
+        y1 = int(y0 + 1000*(a))
+        x2 = int(x0 - 1000*(-b))
+        y2 = int(y0 - 1000*(a))
+        result.append([(x1,y1),(x2,y2)])
+    return result
+
+def line_intersection(line1, line2):
+    xdiff = (line1[0][0] - line1[1][0], line2[0][0] - line2[1][0])
+    ydiff = (line1[0][1] - line1[1][1], line2[0][1] - line2[1][1])
+
+    def det(a, b):
+        return a[0] * b[1] - a[1] * b[0]
+
+    div = det(xdiff, ydiff)
+    if div == 0:
+       return
+
+    d = (det(*line1), det(*line2))
+    x = det(d, xdiff) / div
+    y = det(d, ydiff) / div
+    return x, y
+
+
+
+def point_in_range(point1, point2, delta):
+    result = False
+    diff_x = abs(point1[0][0] - point2[0])
+    diff_y = abs(point1[0][1] - point2[1])
+    if(diff_x < delta and diff_y < delta):
+        result = True
+    return result 
+def get_edges_approx(approx_edge_coordinates):
+    edges = []
+    for par in approx_edge_coordinates:
+        edges.append([par[0][0], par[0][1]])
+    return edges
+
+def compare_shape_coordinates(shape1, shapes2, delta, ref_num_of_edges):
+    result = False
+    counter = 0
+    for point1 in shape1:
+        for point2 in shapes2:
+            if point_in_range(point1, point2, delta):
+                counter += 1
+            break
+    similar_point_diff = abs(counter - len(shape1))
+    if(similar_point_diff >= ref_num_of_edges):
+        result = True
+    return result
+
+
+def get_all_lines_intersections(lines):
+    result = []
+    for actual_line in lines:
+        for next_line in lines:
+            intersection = line_intersection(actual_line, next_line)
+            if intersection:
+                result.append(intersection)
+    return result
+
+def getContorous(img, imgContour, intersections):
+    contours, hierarchy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
     for cnt in contours:
         area = cv2.contourArea(cnt)
@@ -92,7 +160,7 @@ def getContorous(img, imgContour):
             
             # cv2.putText(imgContour, "Points: " + str(len(approx)), (x+w+20, y+20), cv2.FONT_HERSHEY_COMPLEX, 0.7, (0, 255, 0), 2)
             # cv2.putText(imgContour, "Area: " + str(int(area)), (x+w+20, y+45), cv2.FONT_HERSHEY_COMPLEX, 0.7, (0, 255, 0), 2)
-            printShape(imgContour, approx, (x, y), area, w, h, 10)
+            printShape(imgContour, approx, 10, intersections)
 
 def quit_(root):
     root.destroy()
@@ -105,23 +173,27 @@ def update_image(image_label, cam, image_canny_label):
     imgBlur = cv2.GaussianBlur(hsv_img, (7, 7), 1)
     h, s, v = cv2.split(imgBlur)
     # imgGary = cv2.cvtColor(imgBlur, cv2.COLOR_BGR2GRAY)
-    imgGary = s
+    imgSat = s
     # cannyLow, cannyUp = auto_canny(rgb_img)
     
-    otsuThreshold,th3 = cv2.threshold(imgGary,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    otsuThreshold,th3 = cv2.threshold(imgSat,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
 
     cannyUp = otsuThreshold
     cannyLow = 0.5 * otsuThreshold
     scale_widget1.set(cannyLow)
     scale_widget2.set(cannyUp)
-    imgCanny = cv2.Canny(imgGary, scale_widget1.get(), scale_widget2.get())
+    imgCanny = cv2.Canny(imgSat, scale_widget1.get(), scale_widget2.get(),apertureSize = 3)
     
     kernel = np.ones((5, 5))
     imgDil = cv2.dilate(imgCanny, kernel, iterations = 1)
-    getContorous(imgDil, rgb_img)
-    thresh = cv2.threshold(imgGary, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-
-    circles = cv2.HoughCircles(imgGary, cv2.HOUGH_GRADIENT, 1, minDist=150, param1=cannyUp, param2=30, minRadius=scale_minR.get(), maxRadius=scale_maxR.get())
+    
+    linesAcccumulator = cv2.HoughLines(imgCanny, 1, np.pi/180,100)
+    lines = getLinesFromAcc(linesAcccumulator)
+    intersections = get_all_lines_intersections(lines)
+    
+    getContorous(imgDil, rgb_img, intersections)
+  
+    circles = cv2.HoughCircles(imgSat, cv2.HOUGH_GRADIENT, 1, minDist=150, param1=cannyUp, param2=30, minRadius=scale_minR.get(), maxRadius=scale_maxR.get())
 
     if circles is not None:
         circles = np.round(circles[0, :]).astype("int")
