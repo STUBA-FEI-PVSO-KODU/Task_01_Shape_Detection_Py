@@ -57,23 +57,24 @@ class Shape(Enum):
     
 def printShape(img, approx, square_rect_param, intersections) :
     x, y, w, h = cv2.boundingRect(approx)
-    position = (x, y)
+    position_rect = (x, y)
+    position_text = (x, y-10)
     diff_geometrics = abs(w-h)
     
     if len(approx) == Shape.TRIANGLE.value:
         if(compare_shape_coordinates(approx, intersections, 10, Shape.TRIANGLE.value)):
-            cv2.putText(img, 'Trojuholnik', position,
+            cv2.putText(img, 'Trojuholnik', position_text,
                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-            cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 5)
+            cv2.rectangle(img, position_rect, (x+w, y+h), (0, 255, 0), 2)
   
     elif len(approx) == Shape.SQUARE.value:
         if(compare_shape_coordinates(approx, intersections, 15, Shape.SQUARE.value)):
             txt = 'Obdlznik'
             if diff_geometrics < square_rect_param:
                 txt = 'Stvorec'
-            cv2.putText(img, txt, position,
+            cv2.putText(img, txt,  position_text,
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-            cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 5)
+            cv2.rectangle(img, position_rect, (x+w, y+h), (0, 255, 0), 2)
   
 
 def getLinesFromAcc(accumulator):
@@ -93,19 +94,19 @@ def getLinesFromAcc(accumulator):
     return result
 
 def line_intersection(line1, line2):
-    xdiff = (line1[0][0] - line1[1][0], line2[0][0] - line2[1][0])
-    ydiff = (line1[0][1] - line1[1][1], line2[0][1] - line2[1][1])
+    x_diff = (line1[0][0] - line1[1][0], line2[0][0] - line2[1][0])
+    y_diff = (line1[0][1] - line1[1][1], line2[0][1] - line2[1][1])
 
     def det(a, b):
         return a[0] * b[1] - a[1] * b[0]
 
-    div = det(xdiff, ydiff)
+    div = det(x_diff, y_diff)
     if div == 0:
        return
 
     d = (det(*line1), det(*line2))
-    x = det(d, xdiff) / div
-    y = det(d, ydiff) / div
+    x = det(d, x_diff) / div
+    y = det(d, y_diff) / div
     return x, y
 
 
@@ -180,7 +181,7 @@ def update_image(image_label, cam, image_canny_label):
     kernel = np.ones((5, 5))
     imgDil = cv2.dilate(imgCanny, kernel, iterations = 1)
     
-    linesAcccumulator = cv2.HoughLines(imgCanny, 1, np.pi/180,100)
+    linesAcccumulator = cv2.HoughLines(imgCanny, 1, np.pi/180,50)
     lines = getLinesFromAcc(linesAcccumulator)
     intersections = get_all_lines_intersections(lines)
     
@@ -239,18 +240,18 @@ def update_all(root, image_label, cam, fps_label, image_canny_label):
 
 if __name__ == '__main__':
 
-    image_label = tk.Label(master=root)# label for the video frame
-    image_canny_label = tk.Label(master=root)# label for the video frame
+    image_label = tk.Label(master=root)
+    image_canny_label = tk.Label(master=root)
     image_label.pack()
 
     cam = cv2.VideoCapture(0) 
-    fps_label = tk.Label(master=root)# label for fps
-    fps_label._frame_times = deque([0]*5)  # arbitrary 5 frame average FPS
+    fps_label = tk.Label(master=root)
+    fps_label._frame_times = deque([0]*5) 
     fps_label.pack()
-    # quit button
+   
     quit_button = tk.Button(master=root, text='Quit',command=lambda: quit_(root))
     quit_button.place()
     quit_button.pack()
-    # setup the update callback
+    
     root.after(0, func=lambda: update_all(root, image_label, cam, fps_label, image_canny_label))
     root.mainloop()
