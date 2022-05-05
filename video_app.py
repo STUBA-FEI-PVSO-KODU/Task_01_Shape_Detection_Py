@@ -68,7 +68,7 @@ def printShape(img, approx, square_rect_param, intersections) :
             cv2.rectangle(img, position_rect, (x+w, y+h), (0, 255, 0), 2)
   
     elif len(approx) == Shape.SQUARE.value:
-        if(compare_shape_coordinates(approx, intersections, 15, Shape.SQUARE.value)):
+        if(compare_shape_coordinates(approx, intersections, 10, Shape.SQUARE.value)):
             txt = 'Obdlznik'
             if diff_geometrics < square_rect_param:
                 txt = 'Stvorec'
@@ -93,20 +93,20 @@ def getLinesFromAcc(accumulator):
         result.append([(x1,y1),(x2,y2)])
     return result
 
-def line_intersection(line1, line2):
-    x_diff = (line1[0][0] - line1[1][0], line2[0][0] - line2[1][0])
-    y_diff = (line1[0][1] - line1[1][1], line2[0][1] - line2[1][1])
+def line_intersection(l1, l2):
+    x_diff = (l1[0][0] - l1[1][0], l2[0][0] - l2[1][0])
+    y_diff = (l1[0][1] - l1[1][1], l2[0][1] - l2[1][1])
 
-    def det(a, b):
+    def determinant(a, b):
         return a[0] * b[1] - a[1] * b[0]
 
-    div = det(x_diff, y_diff)
+    div = determinant(x_diff, y_diff)
     if div == 0:
        return
 
-    d = (det(*line1), det(*line2))
-    x = det(d, x_diff) / div
-    y = det(d, y_diff) / div
+    d = (determinant(*l1), determinant(*l2))
+    x = determinant(d, x_diff) / div
+    y = determinant(d, y_diff) / div
     return x, y
 
 
@@ -191,7 +191,7 @@ def update_image(image_label, cam, image_canny_label):
     if circles is not None:
         circles = np.round(circles[0, :]).astype("int")
         for (x,y,r) in circles:
-            cv2.circle(rgb_img, (x,y), r, (36,255,12), 3)
+            cv2.circle(rgb_img, (x,y), r, (36,255,12), 2)
             cv2.putText(rgb_img, 'Kruh', (x,y),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
